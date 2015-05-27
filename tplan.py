@@ -90,7 +90,7 @@ class TPlanUI(QtGui.QMainWindow, Ui_MainWindow):
         self.log(reason)
         if self.autoButton.text() == 'Stop':
             self.autoButton.setText('Auto Test')
-            self.manualModeGroupBox.setEnabled(True)
+            self.manualGroupBox.setEnabled(True)
             self.log('<<<< Stop auto test <<<<')
 
     def on_result(self, n, state):

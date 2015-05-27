@@ -1,10 +1,10 @@
-
-
 import threading
 import time
+import datetime
 from test_equipment import TestEquipment
 from target import TARGET
 import subprocess
+
 
 class TPlanMessageHandler():
     """
@@ -29,9 +29,8 @@ class TPlanMessageHandler():
 
             board = self.bridge.getBoard()
             target = TARGET[board](self.dev)
-            self.bridge.log('----------- search target -----------')
-            start_time = time.time()
-            self.dev.enable_dc()
+            self.bridge.log('\n============= search target =============')
+            start_time = datetime.datetime.now()
             mask = 0
             for i in range(4):
                 if self.dev.detect_target(i):
@@ -40,8 +39,6 @@ class TPlanMessageHandler():
                     self.bridge.setBoardState(i, 1)
                 else:
                     self.bridge.setBoardState(i, 0)
-
-            self.dev.enable_dc(False)
 
             for i in range(4):
                 if mask & (1 << i) == 0:
@@ -52,47 +49,65 @@ class TPlanMessageHandler():
                 time.sleep(0.1)
                 # To do
 
-                self.bridge.log('>> test target %d' % (i + 1))
-                print('************** test target %d ***************' % (i + 1))
+                self.bridge.log('----------- test target %d -----------' % (i + 1))
+                print('......... test target %d .........' % (i + 1))
 
                 try:
-                    self.bridge.log('1. write interface firmware...')
-                    target.write_interface()
-                    self.bridge.log('ok')
-                    self.bridge.log('2. write bootloader...')
-                    target.write_bootloader()
-                    self.bridge.log('ok')
+                    has_error = False
+                    while True:
+                        if target.find_device():
+                            self.bridge.log('skip writing interface firmware and bootloader')
+                        else:
+                            self.bridge.log('write interface firmware...')
+                            if target.write_interface():
+                                has_error = True
+                                break
+                            self.bridge.log('write bootloader...')
+                            if target.write_bootloader():
+                                has_error = True
+                                break
 
-                    self.bridge.log('3. write test program...')
-                    if target.write_test():
-                        self.dev.deselect_target(i)
+                        self.bridge.log('write test program...')
+                        if target.write_test():
+                            has_error = True
+                            break
+
+                        self.bridge.log('ok')
+                        time.sleep(2)
+                        self.bridge.log('read test result...')
+                        io_result, io_result_description, voltage = target.test()
+                        if io_result:
+                            self.bridge.log('IO test: ok')
+                        else:
+                            self.bridge.setBoardState(i, 3)
+                            self.bridge.log('IO test: failed')
+                            self.bridge.log(io_result_description)
+
+                            has_error = True
+                            break
+
+                        self.bridge.log('Voltage: %s' % voltage)
+
+                        self.bridge.log('write product program...')
+                        target.write_product()
+
+                        break
+
+                    if has_error:
                         self.bridge.log('failed')
                         self.bridge.setBoardState(i, 3)
-                        continue
-
-                    self.bridge.log('ok')
-                    time.sleep(2)
-                    self.bridge.log('4. read test result...')
-                    result, io, voltage = target.test()
-                    self.bridge.log('IO: 0x%X - 0x%X' % (io[0], io[1]))
-                    self.bridge.log('Voltage: %s' % voltage)
-
-                    self.bridge.log('5. write product program...')
-                    target.write_product()
-                    self.dev.deselect_target(i)
-
-                    self.bridge.log('<< test target %d done' % (i + 1))
-
-                    self.dev.deselect_target(i)
-                    self.bridge.setBoardState(i, 2)
+                    else:
+                        self.bridge.log('......... test target %d done .........' % (i + 1))
+                        self.bridge.setBoardState(i, 2)
                 except subprocess.CalledProcessError as e:
                     self.bridge.log('failed')
                     self.bridge.log(e)
                     self.bridge.setBoardState(i, 3)
-                    continue
 
-            end_time = time.time()
-            self.bridge.log('time lapsed: %d' % (end_time - start_time))
+                self.dev.deselect_target(i)
+
+            end_time = datetime.datetime.now()
+            self.bridge.log('\ntime lapsed: %d' % (end_time - start_time).seconds)
 
     def handle_message(self):
         while True:
@@ -115,6 +130,7 @@ class TPlanMessageHandler():
                     target = TARGET[board](self.dev)
                     index = self.bridge.getBoardId() - 1
                     self.dev.select_target(index)
+                    time.sleep(3)
                     self.bridge.log('-------- %s --------' % message)
                     try:
                         if message == 'write interface':
@@ -123,13 +139,17 @@ class TPlanMessageHandler():
                             target.write_bootloader()
                         elif message == 'write program':
                             target.write_test()
+                        elif message == 'test target':
+                            target.test()
+                        elif message == 'write product':
+                            target.write_product()
 
                         self.bridge.log('ok')
                     except subprocess.CalledProcessError as e:
                         self.bridge.log('failed')
                         self.bridge.log(e)
 
-                    # self.dev.deselect_target(index)
+                        # self.dev.deselect_target(index)
 
     def start(self):
         self.message_thread.start()
