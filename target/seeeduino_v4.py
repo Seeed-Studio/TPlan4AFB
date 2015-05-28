@@ -3,7 +3,7 @@
 avrdude -c avrispmkII -P usb -p m16u2 -U lfuse:w:0xEF:m -U hfuse:w:0xD9:m -U efuse:w:0xF4:m -U flash:w:interface.hex
 
 + write booloader
-avrdude -c avrispmkII -P usb -p m328p -U lfuse:w:0xFF:m -U hfuse:w:0xDA:m -U efuse:w:0x05:m -U flash:w:bootloader.hex
+avrdude -c avrispmkII -P usb -p m328p -U lfuse:w:0xFF:m -U hfuse:w:0xDE:m -U efuse:w:0x05:m -U flash:w:bootloader.hex
 
 + write program
 avrdude -c arduino -P {COMx} -b 115200 -p m328p -D -U flash:w:program.hex
@@ -15,6 +15,8 @@ import shlex
 from serial.tools import list_ports
 from time import sleep
 
+MAX_VOLTAGE = [5.25, 3.47, 5.25, 5.25, 5.25, 5.25, 5.25, 5.25]
+MIN_VOLTAGE = [4.75, 3.14, 4.75, 0.0, 0.0, 0.0, 0.0, 4.75]
 PIN_NAME = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7',
             'D7', 'D8', 'D9', 'D10', 'D11', 'D12', 'D13', 'D14/SDA', 'D15/SCL',
             'A0', 'A1', 'A2', 'A3', 'A4', 'A5',
@@ -26,7 +28,7 @@ AVRDUDE = 'external/avrdude'
 
 INTERFACE  = 'firmware/seeeduino_v4_interface.hex'
 BOOTLOADER = 'firmware/seeeduino_v4_bootloader.hex'
-TEST_PROGRAM = 'firmware/seeeduino_v4_test3.hex'
+TEST_PROGRAM = 'firmware/seeeduino_v4_test.hex'
 
 def timeout_command(command, timeout = 10):
     """
@@ -148,16 +150,22 @@ class SeeeduinoV4():
         print(io_result_description)
 
         self.device.enable_dc()
-        self.device.read_voltage(0)
+        self.device.read_voltage(0)  # First read may have error
+        voltage_result = True
+        voltage_result_description = ''
         voltage = []
         for i in range(8):
-            voltage.append(self.device.read_voltage(i))
+            v = self.device.read_voltage(i)
+            if v < MIN_VOLTAGE[i] or v > MAX_VOLTAGE[i]:
+                voltage_result = False
+                voltage_result_description += '[ channel %d voltage %f is out of range %f - %f ]' % (i, v, MIN_VOLTAGE[i], MAX_VOLTAGE[i])
+            voltage.append(v)
 
-        print('Voltage: %s' % voltage)
         self.device.disable_dc()
+        print('Voltage: %s' % voltage)
+        print(voltage_result_description)
 
-
-        return (io_result, io_result_description, voltage)
+        return (io_result, io_result_description, voltage_result, voltage_result_description)
 
     def reset(self):
         pass

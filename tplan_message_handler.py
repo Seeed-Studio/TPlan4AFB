@@ -75,21 +75,27 @@ class TPlanMessageHandler():
                         self.bridge.log('ok')
                         time.sleep(2)
                         self.bridge.log('read test result...')
-                        io_result, io_result_description, voltage = target.test()
+                        io_result, io_result_description, voltage_result, voltage_result_description = target.test()
                         if io_result:
                             self.bridge.log('IO test: ok')
                         else:
-                            self.bridge.setBoardState(i, 3)
                             self.bridge.log('IO test: failed')
                             self.bridge.log(io_result_description)
 
                             has_error = True
                             break
 
-                        self.bridge.log('Voltage: %s' % voltage)
+                        if voltage_result:
+                            self.bridge.log('Voltage test: ok')
+                        else:
+                            self.bridge.log('Voltage test: failed')
+                            self.bridge.log(voltage_result_description)
 
-                        self.bridge.log('write product program...')
-                        target.write_product()
+                            has_error = True
+                            break
+
+                        # self.bridge.log('write product program...')
+                        # target.write_product()
 
                         break
 
@@ -133,18 +139,36 @@ class TPlanMessageHandler():
                     time.sleep(3)
                     self.bridge.log('-------- %s --------' % message)
                     try:
+                        has_error = False
                         if message == 'write interface':
-                            target.write_interface()
+                            if target.write_interface():
+                                has_error = True
                         elif message == 'write bootloader':
-                            target.write_bootloader()
+                            if target.write_bootloader():
+                                has_error = True
                         elif message == 'write program':
-                            target.write_test()
+                            if target.write_test():
+                                has_error = True
                         elif message == 'test target':
-                            target.test()
+                            io_result, io_result_description, voltage_result, voltage_result_description = target.test()
+                            if not io_result:
+                                self.bridge.log('IO test: failed')
+                                self.bridge.log(io_result_description)
+
+                                has_error = True
+
+                            if not voltage_result:
+                                self.bridge.log('Voltage test: failed')
+                                self.bridge.log(voltage_result_description)
+
+                                has_error = True
                         elif message == 'write product':
                             target.write_product()
 
-                        self.bridge.log('ok')
+                        if has_error:
+                            self.bridge.log('failed')
+                        else:
+                            self.bridge.log('ok')
                     except subprocess.CalledProcessError as e:
                         self.bridge.log('failed')
                         self.bridge.log(e)
