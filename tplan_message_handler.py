@@ -1,7 +1,7 @@
 import threading
 import time
 import datetime
-from test_equipment import TestEquipment
+from assistant import Assistant as TestEquipment
 from target import TARGET
 import subprocess
 
@@ -24,7 +24,8 @@ class TPlanMessageHandler():
     def run_auto_test(self):
 
         while not self.exit_auto.is_set():
-            if not self.dev.wait_for_target(2):
+            targets = self.dev.wait_for_target(2)
+            if not targets:
                 continue
 
             board = self.bridge.getBoard()
@@ -33,13 +34,13 @@ class TPlanMessageHandler():
             start_time = datetime.datetime.now()
             mask = 0
             for i in range(4):
-                if self.dev.detect_target(i):
+                if targets & (1 << i):
                     self.bridge.log('find target %d' % (i + 1))
-                    mask |= 1 << i
                     self.bridge.setBoardState(i, 1)
                 else:
                     self.bridge.setBoardState(i, 0)
 
+            mask = targets
             for i in range(4):
                 if mask & (1 << i) == 0:
                     continue
@@ -56,16 +57,17 @@ class TPlanMessageHandler():
                     has_error = False
                     while True:
                         if target.find_device():
-                            self.bridge.log('skip writing interface firmware and bootloader')
+                            self.bridge.log('skip writing interface firmware')
                         else:
                             self.bridge.log('write interface firmware...')
                             if target.write_interface():
                                 has_error = True
                                 break
-                            self.bridge.log('write bootloader...')
-                            if target.write_bootloader():
-                                has_error = True
-                                break
+
+                        self.bridge.log('write bootloader...')
+                        if target.write_bootloader():
+                            has_error = True
+                            break
 
                         self.bridge.log('write test program...')
                         if target.write_test():
@@ -110,7 +112,7 @@ class TPlanMessageHandler():
                     self.bridge.log(e)
                     self.bridge.setBoardState(i, 3)
 
-                self.dev.deselect_target(i)
+                self.dev.power_off_targets(i)
 
             end_time = datetime.datetime.now()
             self.bridge.log('\ntime lapsed: %d' % (end_time - start_time).seconds)
